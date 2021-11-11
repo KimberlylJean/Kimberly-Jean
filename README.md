@@ -1,4 +1,4 @@
-- 👋 Hi, I’m @kimy509
+- 👋 Hi, I’m @KimberlyJean
 - 👀 I’m interested in Data exploration,data cleaning,data analysis and data visualization.
 - 🌱 I’m currently learning advanced Excel,SQL,Tableau,R and Python.
 - 📫 How to reach me : 
