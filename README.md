@@ -4,6 +4,7 @@
 - 📫 How to reach me : 
           jeankimberly21@gmail.com
           //www.linkedin.com/in/kimberly-jean-data-enthusiast
+- Tableau Profile: https://public.tableau.com/app/profile/kimberly6871 
 
 <!---
 kimy509/kimy509 is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
