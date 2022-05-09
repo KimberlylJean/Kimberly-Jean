@@ -195,3 +195,7 @@ SELECT location,Population,date,MAX(total_cases) AS HighestInfectionCount,MAX((t
 FROM PortfolioProjects..CovidDeaths
 GROUP BY location,population,date
 ORDER BY PercentPopulationInfected DESC;
+
+
+
+Tutorial found on Google from Alex the data analyst. 
