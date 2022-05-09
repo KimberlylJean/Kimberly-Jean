@@ -157,3 +157,5 @@ ALTER TABLE NashvilleHousing
 DROP COLUMN SaleDate;
 
 -----------------------------------------------------------------------------------------------------------------------------
+
+Tutorial found on Youtube from Alex the Data Analyst. 
