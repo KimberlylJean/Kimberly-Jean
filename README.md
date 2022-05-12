@@ -5,6 +5,7 @@
           jeankimberly21@gmail.com
           //www.linkedin.com/in/kimberly-jean-data-enthusiast
 - Tableau Profile: https://public.tableau.com/app/profile/kimberly6871 
+- I'm always looking for guided projects on youtube and personal ones. So feel free to hit me up! 
 
 <!---
 kimy509/kimy509 is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
