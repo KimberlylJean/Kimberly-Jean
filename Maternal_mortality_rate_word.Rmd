@@ -1,0 +1,470 @@
+---
+title: "Maternal Mortality"
+author: "Kimberly Jean"
+date: "2022-12-02"
+output:
+  word_document: default
+---
+
+**The World Health Organization (WHO) defines maternal death as "the death of a woman while pregnant or within 42 days of termination of pregnancy, regardless of the duration or location of the pregnancy, from any cause related to or aggravated by the pregnancy or its management, but not from accidental or incidental causes". The purpose of this report is to investigate the various factors that can contribute to maternal mortality rates in individual states. Although those factors are multiple, this report focuses on the poverty rate, ethnicity, the number of staffed beds, and the female median age per state. The goal is to confirm or refute the common assumptions about maternal death. In addition, we will introduce another data set to train a machine-learning model to predict high-risk pregnancies, as monitoring them can help minimize maternal mortality.** 
+
+- Loading libraries and setting the random number generator seed to 23 :
+```{r,results='hide',message=FALSE,warning=FALSE}
+library(tidyverse)
+library(data.table)
+library(rvest)
+library(ggplot2)
+library(sf)
+library(raster)
+library(spData)
+library(dplyr)
+library(class)
+library(rpart)
+set.seed(23)
+```
+
+- Loading maternal mortality by state and showing a preview of the data :
+```{r}
+maternal_death= read.csv("C:/Users/kimyj/Downloads/mat_mortality_rate.csv")
+head(maternal_death)
+```
+This data set shows the mortality rate per state. The rate is the number of deaths per 100,000 births, and the numbers are the most recent data available for each state.
+
+# Data Cleaning and Exploratory Analysis
+
+- Renaming the columns :
+```{r}
+colnames(maternal_death)[1] = 'State'
+colnames(maternal_death)[2]= 'Maternal_Mortality_Rate'
+```
+
+
+- Finding out if there are null values and removing them :
+```{r}
+maternal_death %>% 
+  filter(if_any(everything(), is.na))
+```
+
+The maternal mortality rate is not reported for three states in the data set: Delaware, New Hampshire, and Vermont. It is critical to remove them from the data set before proceeding with the analysis.
+
+- Removing the null values in the table :
+```{r}
+maternal_death = na.omit(maternal_death)
+maternal_death %>% 
+  filter(if_any(everything(), is.na))
+```
+
+- Converting the maternal mortality rate to percentage :
+```{r}
+maternal_death$Maternal_Mortality_Rate = (maternal_death$Maternal_Mortality_Rate / 1000)
+```
+
+- Finding the state with the highest maternal mortality rate:
+```{r}
+head(arrange(maternal_death, desc(maternal_death$Maternal_Mortality_Rate)),1)
+```
+As you can see, the state with the highest mortality rate is Louisiana, with 58.1 deaths per 100,000 births. 
+
+- Finding the state with the lowest maternal mortality rate:
+```{r}
+head(arrange(maternal_death,(maternal_death$Maternal_Mortality_Rate)),1)
+```
+The state with the lowest mortality rate is California, with 4 deaths per 100,000 births. 
+
+- Finding the average maternal mortality rate for the country:
+```{r}
+mean(maternal_death$Maternal_Mortality_Rate)
+```
+The average maternal mortality rate in the United States is about 21.97 deaths per 100,000 births. 
+
+
+
+# Choropleth Map
+
+- Summary of the map data set:
+```{r}
+us_states
+```
+This is a built-in object in the sf package that contains the contiguous United States data from the US Census Bureau with their geometry. 
+
+- Reducing the map data set :
+```{r}
+short_us_states = us_states %>%
+  dplyr::select(NAME,geometry)
+```
+
+- Merging the map data frame to the main data set :
+
+```{r}
+map_maternal_mortality = merge(short_us_states,maternal_death,by.x='NAME',by.y='State')
+```
+
+- Visualizing the mortality rate per state :
+```{r,fig.width= 7}
+plot(map_maternal_mortality['Maternal_Mortality_Rate'],main ='Map of the maternal mortality rate in the United States')
+```
+
+This plot confirms the initial analysis, California has the lowest maternal mortality rate, and Louisiana has the highest out of all the states in the United States.
+
+
+# The effect of poverty on maternal mortality rates 
+
+*Generally, people tend to assume that the risk of maternal death is higher for women who live in penurious locations. This section aims to analyze the relationship between the poverty rate and the rate of maternal death.*
+
+- Loading the poverty data:
+```{r}
+pov_rate_US = read.csv("C:/Users/kimyj/Downloads/pov_rate_state.csv")
+head(pov_rate_US)
+```
+
+This data set shows the poverty rate per state, and the numbers are provided by the U.S. Census Bureau, which uses data from the American Community Survey.
+
+- Reducing the data set :
+```{r}
+short_pov_rate = pov_rate_US %>%
+  dplyr::select(state,PovertyRate)
+```
+
+- Merging with the main data set :
+```{r}
+maternal_death = merge(maternal_death,short_pov_rate,by.x= 'State',by.y='state')
+```
+
+- Looking at the relationship between the two variables :
+```{r}
+linRegres1 = lm(maternal_death$Maternal_Mortality_Rate~maternal_death$PovertyRate,data = maternal_death)
+summary(linRegres1)
+```
+To predict the maternal mortality rate using the poverty rate, we can use the following equation: 
+
+*maternal_mortality_rate  = 0.001076 + 0.173144 (poverty rate)* 
+
+This equation means that if the poverty rate increases by one unit, the maternal mortality rate increases by 0.173144 units.
+The p-value, lower than 5% indicates that changes in the poverty rate are related to changes in the rate of maternal mortality. Based on the adjusted r-squared value, this model can explain about  16 % of the total variation in the rate of the maternal.
+
+- Plotting the relationship between the poverty rate and the maternal mortality rate:
+```{r,fig.width= 7}
+ggplot(maternal_death,aes(PovertyRate,Maternal_Mortality_Rate)) + geom_point() + geom_smooth(method ='lm' ) + labs(title = "Maternal Mortality Rate vs Poverty Rate", x = "Poverty Rate", y = "Maternal Mortality Rate")
+```
+
+We can see from this visualization that there is a positive slope, which means that the maternal mortality rate increases as the poverty rate increases. But as we can see, the relationship does not seem to be perfectly linear, since the points do not fall on a straight line, but it does seem to follow a straight line moderately, with some variability. In conclusion, the two variables show a moderately positive correlation.
+
+# The impact of the percentage of black people on the maternal mortality rate
+
+*There is a common perception that the maternal mortality rates for non-Hispanic Black women are significantly higher than rates for non-Hispanic White and Hispanic women. The purpose of this section is to examine the relationship between the maternal mortality rate and the percentage of black people in each state.*
+
+- Loading the racial diversity data:
+
+```{r}
+ethn_in_US = read.csv("C:/Users/kimyj/Downloads/race_rate_state.csv")
+head(ethn_in_US)
+```
+
+This data set shows the racial diversity per state. 
+
+- Reducing the ethnicity data set
+```{r}
+short_ethn_data = ethn_in_US %>%
+  dplyr::select(state,BlackTotalPerc)
+```
+
+
+- Merging the ethnicity data frame with the main data :
+```{r}
+maternal_death = merge(maternal_death,ethn_in_US,by.x='State',by.y='state')
+```
+
+- Looking at the relationship  between the maternal mortality rate and the percentage of black people by state :
+```{r}
+linRegres2 = lm(maternal_death$Maternal_Mortality_Rate~maternal_death$BlackTotalPerc,data = maternal_death)
+summary(linRegres2)
+```
+To predict the maternal mortality rate using the percentage of black people, we can use the following equation: 
+
+*maternal_mortality_rate  = 0.01592 + 0.05657 (black total percentage)* 
+
+This equation means that if the percentage of black people increases by one unit, the maternal mortality rate increases by 0.05657 units. In addition, the low p-value(0.0003767) indicates a relationship between the percentage of black people and the rate of maternal mortality rather than simply a coincidence. This model explains about 23 % of the variability of the rate of emergency visits, which is the variable we are trying to predict.
+
+```{r,fig.width= 7}
+ggplot(maternal_death,aes(BlackTotalPerc,Maternal_Mortality_Rate)) + geom_point() + geom_smooth(method ='lm' ) + labs(title = "Maternal Mortality Rate vs Black Total Percentage", x = "Black Total Percentage", y = "Maternal Mortality Rate")
+```
+
+The scatter plot shows a positive slope. There is a moderate positive relationship between the maternal mortality rate and the percentage of black people per state. Therefore, as the maternal percentage of black people in a state increases, so does the rate of maternal mortality, but it is not a linear relationship. This confirms that states with a high percentage of black people tend to have a higher maternal mortality rate.
+
+# Incidence of the number of staffed hospital beds on maternal mortality  
+
+*We frequently hear that areas with fewer resources have higher maternal death rates. As a result, this segment will investigate the relationship between the rate of staffed hospital beds and the maternal mortality rate in each state.*
+
+- Loading the data:
+```{r}
+hospital_per_state = read.csv("C:/Users/kimyj/OneDrive/Documents/Hospital_Beds_Per_State.csv")
+head(hospital_per_state)
+```
+
+This data set shows the hospital statistics per state. 
+
+- Removing the first five characters from the state column:
+```{r}
+hospital_per_state$State = substr(hospital_per_state$State,6,length(hospital_per_state$State))
+
+```
+
+- Converting the staffed bed column to numerical format :
+```{r}
+hospital_per_state$Staffed.Beds = as.numeric(sub(',','',hospital_per_state$Staffed.Beds))
+```
+
+
+- Reducing the data frame :
+```{r}
+short_hospital_data = hospital_per_state %>%
+  dplyr::select(State,Staffed.Beds)
+```
+
+
+- Merging with the main data set :
+```{r}
+maternal_death = merge(maternal_death,short_hospital_data)
+```
+
+- Loading the population data:
+```{r}
+pop_data = read.csv("C:/Users/kimyj/Downloads/pop_dat_2022.csv")
+head(pop_data)
+```
+This file resumes the total population for each state in the united states. 
+
+- Reducing data set :
+
+```{r}
+short_pop_data = pop_data %>%
+  dplyr::select(state,pop2022)
+```
+
+- Renaming the columns :
+
+```{r}
+colnames(short_pop_data)[2] = 'Total.population'
+colnames(short_pop_data)[1] = 'State'
+```
+
+
+- Merging with the main data set :
+```{r}
+maternal_death = merge(maternal_death,short_pop_data)
+```
+
+- Calculating the rate of beds per inhabitant :
+```{r}
+maternal_death = maternal_death %>% 
+  mutate(Rate_staffed_hospital_beds = ((maternal_death$Staffed.Beds / maternal_death$Total.population)*100))
+head(dplyr::select(maternal_death,State,Rate_staffed_hospital_beds),6)
+```
+
+- Analyzing the relationship between the maternal mortality rate and the rate of staffed beds per inhabitant:
+
+```{r}
+linRegres3 = lm(maternal_death$Maternal_Mortality_Rate~ maternal_death$Rate_staffed_hospital_beds,data = maternal_death)
+summary(linRegres3)
+```
+To predict the maternal mortality rate using the rate of staffed hospital beds, we can use the following equation: 
+
+*maternal_mortality_rate  = 0.002651 + 0.087072 (Rate_staffed_hospital_beds)* 
+
+This equation means that if the rate of staffed beds per inhabitant increases by one unit, the maternal mortality rate increases by 0.087072 units. We have a low p-value that indicates that the model is statistically significant. Based on the adjusted r-squared value, this model explains 14.51 % of the variability of the rate of maternal mortality which means it has low explanatory power when it comes to predicting values.
+
+
+```{r,fig.width= 7}
+ggplot(maternal_death,aes(Rate_staffed_hospital_beds,Maternal_Mortality_Rate)) + geom_point() + geom_smooth(method ='lm' ) + labs(title = "Maternal Mortality Rate vs Rate of Staffed Hospital Beds", x = "Rate of Staffed Hospital Beds", y = "Maternal Mortality Rate")
+```
+
+In this visualization, we see that there is a positive slope, which means that the maternal mortality rate increases as the rate of staffed hospital beds increases. As we can see, it is not a perfect relationship because some states with a high rate of staffed hospital beds have a lower maternal mortality rate than others with a lower staffed hospital beds rate. The general tendency, however, is for the number of emergency visits to increase as the poverty rate increases. In conclusion, the two variables show a moderately positive correlation. This is surprising since the common conception is that, states with higher staffed hospital beds should have a lower maternal mortality rate.
+
+# The effect of maternal age on maternal mortality rates 
+
+*It is commonly stated that maternal mortality rates rise with maternal age. This section will concentrate on the relationship between the two variables per state.*
+
+- Loading the data:
+```{r}
+median_age = read.csv("C:/Users/kimyj/Downloads/median_age_per_state.csv")
+head(median_age)
+```
+
+
+- Reducing the data set :
+```{r}
+short_median_age = median_age %>%
+  dplyr::select(state,MedianAgeFemale)
+```
+
+
+- Merging with the main data set:
+```{r}
+maternal_death = merge(maternal_death,short_median_age,by.x ='State',by.y='state' )
+```
+
+
+- Analyzing the relationship between the median female age and the maternal mortality rate:
+```{r}
+linRegres4 = lm(maternal_death$Maternal_Mortality_Rate~ maternal_death$MedianAgeFemale,data = maternal_death)
+summary(linRegres4)
+```
+
+To predict the maternal mortality rate using the female median age, we can use the following equation: 
+  
+  *maternal_mortality_rate  = 0.03409 - 0.0003054 (female median age)* 
+  
+According to this equation, if the female median age rises by one unit, the maternal mortality rate falls by 0.03054 units. The results were not statistically significant because the p-value was more than 5%. This implies that there is no relationship between maternal mortality and female median age. According to the findings, maternal death does not depend on age but differs from person to person.
+
+```{r,fig.width= 7}
+ggplot(maternal_death,aes(MedianAgeFemale,Maternal_Mortality_Rate)) + geom_point() + geom_smooth(method ='lm' ) + labs(title = "Maternal Mortality Rate vs Female Median Age", x = "Female Median Age", y = "Maternal Mortality Rate")
+```
+
+Considering this data set, the scatter plot shows there is no correlation between female median age and mortality rate. The findings refute the assumption that states with a higher female median age have higher maternal mortality rates. 
+
+
+
+# Impact of all those variables on the maternal mortality rate
+
+Since the individual linear regression showed that there is no correlation between the mortality rate and the female median age, we will not use it in this multi-linear regression model. 
+
+- Multi-linear Regression :
+```{r}
+multi_regression = lm(maternal_death$Maternal_Mortality_Rate ~ maternal_death$BlackTotalPerc+maternal_death$Rate_staffed_hospital_beds+maternal_death$PovertyRate)
+summary(multi_regression)
+```
+Using the rate of staffed hospital beds, the poverty rate, and the percentage of black people in a state, we can predict the rate of maternal mortality using this regression equation:
+
+*rate of maternal mortality = 0.03256 + 0.040524(black percentage)+ 0.029097(rate of staffed bed per inhabitant)+0.076800(poverty rate)*
+
+According to the first slope coefficient, increasing the percentage of black persons by one unit while holding all other factors constant results in an average rise of 0.04051 units in maternal mortality. In other words, when the rate of staffed beds, the female median age, and the poverty rate are all taken into account, primarily black states have a higher risk of maternal death.
+
+
+According to the second slope coefficient, increasing the rate of staffed hospital beds by one unit while holding all other factors constant results in an average rise of 0.04165 units in maternal mortality. Essentially, states with more staffed hospital beds have a higher risk of maternal mortality when taking into consideration the percentage of black people, the female median age, and the poverty rate.
+
+The final slope coefficient indicates that if the poverty rate increases by one while the other predictor variables remain constant, the rate of maternal death increases by 0.07199 units on average. In other words, when the percentage of black people, the rate of staffed beds, and the median age are all taken into account, impoverished areas have a greater rate of maternal death.
+
+When we compare the slopes of the linear regressions performed above, we can see that the correlations between the rate of maternal death, the poverty rate, and the percentage of black people are weaker than when they were analyzed separately. The effect of each predictor variable on the rate of maternal death was adjusted. We didn't consider additional characteristics like whether the location was primarily black or poor, whether the median age was low or high, or whether the number of staffed hospital beds was high when we modeled the connections independently to predict the rate of maternal mortality. By including all variables, the possibility of underlying and unintentional bias that would have been missed if they were excluded is reduced.
+
+Although we have an overall p-value below 5% that indicates the predictor variables: percentage of black people, poverty rate, and the rate of staffed beds are useful for predicting the value of the response variable(rate of maternal mortality), the phenomenon we are trying to model is so complex that the chosen variables can't capture its behavior, and thus we get a low R-squared value of 26.51%.
+
+
+# How can the maternal mortality rate be reduced?
+
+**According to the WHO, every day, over 800 women die around the world from preventable causes related to the inherent dangers of pregnancy, and most of them occur in low-resource settings where they could have been prevented. Since machine learning is widely used in the medical field for prediction and diagnosis, this part aims to use a method that can predict risky pregnancies and categorize them into three classes: low-risk, mid-risk, and high-risk.**
+
+- Loading the data :
+```{r}
+pregnancy_risk = read.csv("C:/Users/kimyj/Downloads/Maternal Health Risk Data Set.csv")
+summary(pregnancy_risk)
+```
+This data set contains six variables : 
+
+1. The age;
+2. The upper value of Blood Pressure in mmHg(SystolicBP);
+3. The lower value of Blood Pressure in mmHg(DiastolicBP);
+4. The blood glucose levels in terms of a molar concentration, mmol/L(BS);
+6. The body temperature(BodyTemp)
+5. The heart rate measured in beats per minute(HeartRate);
+6. The risk Level; 
+
+The summary shows that all attribute values have different scales, so we have to standardize the data before training our classifier.
+
+- Classifying the mid-risk pregnancies as high risk and removing missing values in the data set:
+```{r}
+pregnancy_risk = na.omit(pregnancy_risk)
+pregnancy_risk$RiskLevel  = factor(pregnancy_risk$RiskLevel,
+                       levels=c("high risk","low risk","mid risk"),
+                       labels=c("high risk","low risk","high risk"))
+```
+
+- Normalizing the data :
+
+```{r}
+pregnancy_risk$Age = scale(pregnancy_risk$Age)
+pregnancy_risk$SystolicBP = scale(pregnancy_risk$SystolicBP)
+pregnancy_risk$DiastolicBP = scale(pregnancy_risk$DiastolicBP)
+pregnancy_risk$BS = scale(pregnancy_risk$BS)
+pregnancy_risk$BodyTemp = scale(pregnancy_risk$BodyTemp)
+pregnancy_risk$HeartRate = scale(pregnancy_risk$HeartRate)
+```
+
+- Separate  Training   and   Test  Data   Sets :
+
+```{r}
+ind = sample(2, nrow(pregnancy_risk), replace=TRUE, prob=c(0.75, 0.25))
+pregnancy_risk_training   = pregnancy_risk[ind==1, 1:6]
+pregnancy_risk_testing      = pregnancy_risk[ind==2, 1:6]
+pregnancy_risk_test_labels = pregnancy_risk[ind==2, 7]
+pregnancy_risk_train_labels = pregnancy_risk[ind==1, 7]
+```
+
+- Applying a KNN model :
+```{r}
+pregnancy_risk_prediction = knn(train = pregnancy_risk_training,
+                 test = pregnancy_risk_testing,
+                 cl    = pregnancy_risk_train_labels, 
+                 k=3)
+```
+
+- Visualizing the confusion matrix :
+```{r}
+preg_risk_confusion_Matrix = table(Actual_Value = pregnancy_risk_test_labels, Predicted_Value = pregnancy_risk_prediction)
+preg_risk_confusion_Matrix
+preg_risk_confusionMatrix = as.data.frame(preg_risk_confusion_Matrix)
+preg_risk_confusionMatrix <- preg_risk_confusionMatrix %>%
+  mutate(Predicted_Value = factor(Predicted_Value),
+         Actual_Value = factor(Actual_Value, levels = rev(unique(Actual_Value))))
+ggplot(data = preg_risk_confusionMatrix,aes(x=Predicted_Value,y=Actual_Value,fill = Freq))+geom_tile() + theme_bw() + coord_equal() +
+  scale_fill_distiller(palette="Reds", direction=1)+ labs(title = "Confusion Matrix Plot") + geom_text(aes(label=Freq), color="black")
+```
+
+The model correctly predicted that 140 pregnancies were high-risk and 66 pregnancies were low-risk. There were 34 false positives and 31 false negatives.
+
+- Calculating the metrics for this model : 
+```{r}
+sensitivity = preg_risk_confusion_Matrix[2,2]/(preg_risk_confusion_Matrix[2,2]+preg_risk_confusion_Matrix[2,1])*100
+
+specificity = preg_risk_confusion_Matrix[1,1]/(preg_risk_confusion_Matrix[1,2]+preg_risk_confusion_Matrix[1,1])*100
+
+accuracy = (preg_risk_confusion_Matrix[1,1]+preg_risk_confusion_Matrix[2,2])/(preg_risk_confusion_Matrix[1,1]+preg_risk_confusion_Matrix[1,2]+preg_risk_confusion_Matrix[2,1]+preg_risk_confusion_Matrix[2,2])*100
+
+precision = preg_risk_confusion_Matrix[2,2]/(preg_risk_confusion_Matrix[2,2]+preg_risk_confusion_Matrix[1,2])*100
+
+performance_metrics = data.frame(Model= c('KNN'),Sensitivity = c(sensitivity),Specificity = c(specificity),Precision = c(precision),Accuracy = c(accuracy))
+performance_metrics
+```
+
+
+1. According to the sensitivity score, this machine-learning model correctly predicted 66 % of low-risk pregnancies. 
+2. Based on the specificity metric, the model correctly predicted 81.87 percent of high-risk pregnancies. 
+3. The precision score is 68.04%. Therefore, the model missed a considerable amount of true positives and cannot correctly distinguish between low-risk pregnancies that are correctly labeled and those that are incorrectly classified. 
+4. In terms of accuracy, this model made around 76.01% of correct predictions.
+
+The most relevant parameter in this situation is specificity, which indicates that the model properly predicts 81.87% of high-risk pregnancies. The cost of missing someone with a problematic pregnancy is more than the cost of incorrectly informing someone that their pregnancy is risky when it is not because the latter requires close observation and additional tests. As a result, having a model that can accurately predict high-risk pregnancies reduced the chances of maternal death.
+
+
+
+# Conclusion
+In conclusion, this analysis confirmed two common assumptions about the maternal mortality rate: states with a higher percentage of black people tend to have a higher maternal mortality rate, and states with a higher poverty rate also. In contrast to expectations, the correlation between maternal mortality rate and median female age did not appear to be present. In addition, the relationship between the maternal mortality rate and the rate of staffed beds per inhabitant should have been negative, but surprisingly, it was not. In opposition, the maternal mortality rate appears to increase as the number of staffed hospital beds increases. Following that, we applied a machine learning model to forecast dangerous pregnancies, as closely monitoring them is one method to reduce maternal death. 
+
+
+
+
+
+### Data sources
+
+- Hospital Statistics by State. American Hospital Directory. (n.d.). Retrieved December 8, 2022, from https://www.ahd.com/state_statistics.html 
+
+- Maternal health risk data. Kaggle. (2021, December 21). Retrieved December 8, 2022, from https://www.kaggle.com/datasets/csafrit2/maternal-health-risk-data?resource=download 
+
+- Maternal Mortality Rate by State 2022. World Population Review. (n.d.). Retrieved December 8, 2022, from https://worldpopulationreview.com/state-rankings/maternal-mortality-rate-by-state 
+
+- Median Age by State 2022. World Population Review. (n.d.). Retrieved December 15, 2022, from https://worldpopulationreview.com/state-rankings/median-age-by-state
+
+- Poverty rate by state 2022. World Population Review. (n.d.). Retrieved December 8, 2022, from https://worldpopulationreview.com/state-rankings/poverty-rate-by-state 
+- US States - Ranked by Population 2022. World Population Review. (n.d.). Retrieved December 8, 2022, from https://worldpopulationreview.com/states
+
+- US states by race 2022. World Population Review. (n.d.). Retrieved December 8, 2022, from https://worldpopulationreview.com/states/states-by-race
+
+
